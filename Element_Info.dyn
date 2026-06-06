@@ -1,0 +1,198 @@
+{
+  "Uuid": "4bd333e5-3c41-4b8b-b306-ee4d971cf5f9",
+  "IsCustomNode": false,
+  "Description": "",
+  "Name": "Element_Info",
+  "ElementResolver": {
+    "ResolutionMap": {}
+  },
+  "Inputs": [],
+  "Outputs": [],
+  "Nodes": [
+    {
+      "ConcreteType": "Dynamo.Nodes.DSModelElementSelection, DSRevitNodesUI",
+      "NodeType": "ExtensionNode",
+      "InstanceId": [
+        "0a816739-2007-47b8-8e39-bb9f5f9d4044-0005e8a0"
+      ],
+      "Id": "3e370a472f5841b6b548304764213e46",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "00883dbb2d624308aab4827889c6f15c",
+          "Name": "Element",
+          "Description": "The selected elements.",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Select a model element from the document."
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Watch, CoreNodeModels",
+      "WatchWidth": 384.0,
+      "WatchHeight": 353.6,
+      "Id": "2efefdf71954420cb6981a930e74f388",
+      "NodeType": "ExtensionNode",
+      "Inputs": [
+        {
+          "Id": "4052dd9b82cf4c098f3dca715c2e0675",
+          "Name": "",
+          "Description": "Node to show output from",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "83fd73e78d2d45028a0acc0c6adfe236",
+          "Name": "",
+          "Description": "Node output",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Visualizes a node's output"
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "Code": "# Dynamo Python Script — outputs namespace, class, category, family, and all parameters of input element(s)\r\n\r\nimport clr\r\nclr.AddReference(\"RevitNodes\")\r\nimport Revit\r\nclr.ImportExtensions(Revit.Elements)\r\n\r\nclr.AddReference(\"RevitServices\")\r\nfrom RevitServices.Persistence import DocumentManager\r\n\r\nclr.AddReference(\"RevitAPI\")\r\nfrom Autodesk.Revit.DB import FamilyInstance, StorageType, ElementId\r\n\r\ndoc = DocumentManager.Instance.CurrentDBDocument\r\n\r\n# Returns \"Autodesk.Revit.DB.Wall\" — full namespace + class\r\n# \"\"\"'Autodesk.Revit.DB.FamilyInstance'\"\"\"\r\ndef get_full_namespace(api_element):\r\n    t = type(api_element)\r\n    return t.__module__ + \".\" + t.__name__\r\n\r\n# Returns just the class name, e.g. \"Wall\"\r\n# \"\"\"'FamilyInstance'\"\"\"\r\ndef get_class_name(api_element):\r\n    return type(api_element).__name__\r\n\r\n# Returns the Revit category name, or \"<no category>\"\r\n# \"\"\"'Doors'\"\"\"\r\ndef get_category_name(api_element):\r\n    cat = api_element.Category\r\n    if cat is None:\r\n        return \"<no category>\"\r\n    return cat.Name\r\n\r\n# Safely reads .Name on any element; some Revit classes have write-only Name\r\n# \"\"\"'Level 1'\"\"\"\r\ndef safe_name(elem):\r\n    try:\r\n        return elem.Name\r\n    except:\r\n        return \"Id<\" + str(elem.Id.IntegerValue) + \">\"\r\n\r\n# Returns family name; handles FamilyInstance and system families\r\n# \"\"\"'M_Single-Flush'\"\"\"\r\ndef get_family_name(api_element):\r\n    if isinstance(api_element, FamilyInstance):\r\n        return api_element.Symbol.Family.Name\r\n    type_id = api_element.GetTypeId()\r\n    if type_id and type_id.IntegerValue > 0:\r\n        elem_type = doc.GetElement(type_id)\r\n        if elem_type is not None:\r\n            return elem_type.FamilyName or safe_name(elem_type)\r\n    return \"<no family>\"\r\n\r\n# Returns a readable string for one parameter's value, based on its storage type\r\n# \"\"\"'3000 mm'\"\"\"\r\ndef parameter_value_to_string(param):\r\n    try:\r\n        if not param.HasValue:\r\n            return \"<none>\"\r\n        \r\n        storage = param.StorageType\r\n        \r\n        if storage == StorageType.String:\r\n            return param.AsString() or \"\"\r\n        \r\n        if storage == StorageType.Integer:\r\n            try:\r\n                as_str = param.AsValueString()         # \"Yes\"/\"No\" for booleans, formatted ints\r\n                if as_str:\r\n                    return as_str\r\n            except:\r\n                pass\r\n            return str(param.AsInteger())\r\n        \r\n        if storage == StorageType.Double:\r\n            try:\r\n                as_str = param.AsValueString()         # formatted with project units\r\n                if as_str:\r\n                    return as_str\r\n            except:\r\n                pass\r\n            return str(param.AsDouble())\r\n        \r\n        if storage == StorageType.ElementId:\r\n            eid = param.AsElementId()\r\n            if eid is None or eid.IntegerValue < 0:    # InvalidElementId\r\n                return \"<none>\"\r\n            ref_elem = doc.GetElement(eid)\r\n            if ref_elem is not None:\r\n                return safe_name(ref_elem)             # uses try/except inside\r\n            return \"Id<\" + str(eid.IntegerValue) + \">\"\r\n        \r\n        return \"<unknown storage>\"\r\n    except:\r\n        return \"<unreadable>\"                          # last-resort guard\r\n\r\n# Returns a list of (name, value, is_read_only) tuples in Properties-palette order\r\n# \"\"\"[('Mark', 'A-101', False), ('Comments', '', False), ...]\"\"\"\r\ndef collect_parameters(api_element):\r\n    result = []\r\n    for p in api_element.GetOrderedParameters():\r\n        try:\r\n            name = p.Definition.Name\r\n        except:\r\n            name = \"<unreadable name>\"\r\n        value = parameter_value_to_string(p)\r\n        try:\r\n            read_only = p.IsReadOnly\r\n        except:\r\n            read_only = True\r\n        result.append((name, value, read_only))\r\n    return result\r\n\r\n# Returns instance + type parameters as a dict with two labeled groups\r\n# \"\"\"{'instance': [...], 'type': [...]}\"\"\"\r\ndef get_all_parameters(api_element):\r\n    instance_params = collect_parameters(api_element)\r\n    \r\n    type_params = []\r\n    type_id = api_element.GetTypeId()\r\n    if type_id and type_id.IntegerValue > 0:\r\n        elem_type = doc.GetElement(type_id)\r\n        if elem_type is not None:\r\n            type_params = collect_parameters(elem_type)\r\n    \r\n    return {\"instance\": instance_params, \"type\": type_params}\r\n\r\n# Bundles all info about one element into a labeled dict\r\n# \"\"\"{'namespace': '...', 'class': '...', 'category': '...', 'family': '...', 'parameters': {...}}\"\"\"\r\ndef describe_element(element):\r\n    api_element = UnwrapElement(element)\r\n    return {\r\n        \"namespace\":  get_full_namespace(api_element),\r\n        \"class\":      get_class_name(api_element),\r\n        \"category\":   get_category_name(api_element),\r\n        \"family\":     get_family_name(api_element),\r\n        \"parameters\": get_all_parameters(api_element),\r\n    }\r\n\r\n# Handles either a single element or a list\r\n# \"\"\"[{...}, {...}]\"\"\"\r\ndef describe_input(input_data):\r\n    if isinstance(input_data, list):\r\n        return [describe_element(e) for e in input_data]\r\n    return describe_element(input_data)\r\n\r\n# --- main ---\r\ninput_element = IN[0]\r\nOUT = describe_input(input_element)",
+      "Engine": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "3300878ecf9c46f39ded6a9509e74696",
+      "NodeType": "PythonScriptNode",
+      "Inputs": [
+        {
+          "Id": "880c02cd00e74370bd851b509dbe304a",
+          "Name": "IN[0]",
+          "Description": "Input #0",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "294bfe0be2c74260a8b574c90c9ac1b7",
+          "Name": "OUT",
+          "Description": "Result of the python script",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Runs an embedded Python script."
+    }
+  ],
+  "Connectors": [
+    {
+      "Start": "00883dbb2d624308aab4827889c6f15c",
+      "End": "880c02cd00e74370bd851b509dbe304a",
+      "Id": "66d1af143614431daade4bf9588b113f",
+      "IsHidden": "False"
+    },
+    {
+      "Start": "294bfe0be2c74260a8b574c90c9ac1b7",
+      "End": "4052dd9b82cf4c098f3dca715c2e0675",
+      "Id": "dace832c856643fdaaca1521c5268a8b",
+      "IsHidden": "False"
+    }
+  ],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [],
+  "EnableLegacyPolyCurveBehavior": null,
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Properties",
+      "Version": "3.3",
+      "Data": {}
+    },
+    {
+      "ExtensionGuid": "DFBD9CC0-DB40-457A-939E-8C8555555A9D",
+      "Name": "Generative Design",
+      "Version": "8.2",
+      "Data": {}
+    }
+  ],
+  "Author": "",
+  "Linting": {
+    "activeLinter": "None",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "3.3.0.6316",
+      "RunType": "Automatic",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "_Background Preview",
+      "EyeX": -17.0,
+      "EyeY": 24.0,
+      "EyeZ": 50.0,
+      "LookX": 12.0,
+      "LookY": -13.0,
+      "LookZ": -58.0,
+      "UpX": 0.0,
+      "UpY": 1.0,
+      "UpZ": 0.0
+    },
+    "ConnectorPins": [],
+    "NodeViews": [
+      {
+        "Id": "3e370a472f5841b6b548304764213e46",
+        "Name": "Select Model Element",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 16.399999999999977,
+        "Y": 162.40000000000003
+      },
+      {
+        "Id": "2efefdf71954420cb6981a930e74f388",
+        "Name": "Watch",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 440.6044974793663,
+        "Y": 17.18785819019385
+      },
+      {
+        "Id": "3300878ecf9c46f39ded6a9509e74696",
+        "Name": "Python Script",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "ShowGeometry": true,
+        "X": 262.00000000000006,
+        "Y": 168.80000000000004
+      }
+    ],
+    "Annotations": [],
+    "X": 91.84895621960663,
+    "Y": 158.53610207818315,
+    "Zoom": 0.4132229100243089
+  }
+}
